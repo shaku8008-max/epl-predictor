@@ -1,0 +1,8 @@
+{
+  "no_odds": [
+    "elo_home",
+    "elo_away",
+    "elo_diff",
+    "away_shots_for_last5"
+  ]
+}

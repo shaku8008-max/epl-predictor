@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+.env
+.env.*
+
+data/predictions/
+data/processed/features*.csv
+data/processed/matches.csv
