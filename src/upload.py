@@ -74,6 +74,7 @@ def main() -> None:
         if row["fixture_date"]:
             row["fixture_date"] = row["fixture_date"][:10]
     team_stats = read_rows("team_stats.csv")
+    results = read_rows("results.csv")
     stamp = predictions[0]["predicted_at"]
 
     db.upsert("predictions", predictions, "home,away")
@@ -86,6 +87,8 @@ def main() -> None:
     if fixtures:
         db.upsert("prediction_history", fixtures, "home,away,fixture_date")
 
+    db.upsert("results", results, "home,away,fixture_date")
+
     db.insert("runs", {
         "data_as_of": stamp,
         "model": predictions[0]["model"],
@@ -95,7 +98,7 @@ def main() -> None:
     })
 
     print(f"Uploaded {len(predictions)} predictions, {len(team_stats)} teams, "
-          f"{len(fixtures)} next-round fixtures (run stamped {stamp})")
+          f"{len(fixtures)} next-round fixtures, {len(results)} results (run stamped {stamp})")
 
 
 if __name__ == "__main__":

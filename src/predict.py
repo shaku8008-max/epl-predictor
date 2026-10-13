@@ -142,6 +142,10 @@ def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     predictions.to_csv(OUT_DIR / "predictions.csv", index=False)
     team_stats.to_csv(OUT_DIR / "team_stats.csv", index=False)
+    played = current.loc[current["played"], ["home", "away", "date", "home_goals", "away_goals", "result"]].copy()
+    played = played.rename(columns={"date": "fixture_date"})
+    played["fixture_date"] = played["fixture_date"].dt.strftime("%Y-%m-%d")
+    played.to_csv(OUT_DIR / "results.csv", index=False)
     fixtures = predictions.dropna(subset=["fixture_date"]).sort_values("fixture_date")
     history_file = OUT_DIR / "history.csv"
     fixtures.to_csv(history_file, mode="a", header=not history_file.exists(), index=False)
