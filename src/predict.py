@@ -145,6 +145,10 @@ def main() -> None:
     played = current.loc[current["played"], ["home", "away", "date", "home_goals", "away_goals", "result"]].copy()
     played = played.rename(columns={"date": "fixture_date"})
     played["fixture_date"] = played["fixture_date"].dt.strftime("%Y-%m-%d")
+    # Goals are ints, but the column is float64 (unplayed rows are NaN), so cast
+    # back to int before writing, or Supabase's int column rejects "1.0".
+    played["home_goals"] = played["home_goals"].astype(int)
+    played["away_goals"] = played["away_goals"].astype(int)
     played.to_csv(OUT_DIR / "results.csv", index=False)
     fixtures = predictions.dropna(subset=["fixture_date"]).sort_values("fixture_date")
     history_file = OUT_DIR / "history.csv"
