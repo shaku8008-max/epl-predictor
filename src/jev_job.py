@@ -1,4 +1,5 @@
-"""Daily Jev job: fetch FPL team news, ask Jev for a shift, upload to Supabase.
+"""Daily Jev job: settle finished fixtures, then fetch FPL team news, ask Jev
+for a shift and upload it to Supabase.
 
 Run from the epl-predictor folder:
     python src/jev_job.py --dry-run
@@ -29,6 +30,70 @@ MONTHS = {
     )
 }
 BACK_RE = re.compile(r"expected back (\d{1,2}) ([a-z]{3})", re.IGNORECASE)
+
+
+def settle_results(db, dry_run):
+    """Copy final scores from results.csv onto jev_predictions rows still waiting."""
+    try:
+        results = read_rows("results.csv")
+    except FileNotFoundError:
+        print("No results.csv found, skipping settling.")
+        return
+    finished = {}
+    for r in results:
+        if (
+            r["result"] in ("H", "D", "A")
+            and r["home_goals"] is not None
+            and r["away_goals"] is not None
+            and r["fixture_date"]
+        ):
+            finished[(r["home"], r["away"], r["fixture_date"][:10])] = r
+
+    resp = requests.get(
+        f"{db.base}/jev_predictions",
+        headers=db.headers,
+        params={"select": "home,away,fixture_date", "result": "is.null"},
+        timeout=30,
+    )
+    if not resp.ok:
+        print(f"Could not read unsettled rows: {resp.status_code} {resp.text}")
+        return
+    waiting = resp.json()
+
+    settled = 0
+    stamp = datetime.now(timezone.utc).isoformat()
+    for row in waiting:
+        score = finished.get((row["home"], row["away"], row["fixture_date"]))
+        if score is None:
+            continue
+        body = {
+            "home_goals": int(float(score["home_goals"])),
+            "away_goals": int(float(score["away_goals"])),
+            "result": score["result"],
+            "settled_at": stamp,
+        }
+        label = f"{row['home']} v {row['away']} ({row['fixture_date']})"
+        if dry_run:
+            print(f"Would settle {label}: {body['home_goals']}-{body['away_goals']} {body['result']}")
+            settled += 1
+            continue
+        patch = requests.patch(
+            f"{db.base}/jev_predictions",
+            headers=db.headers | {"Prefer": "return=minimal"},
+            params={
+                "home": f"eq.{row['home']}",
+                "away": f"eq.{row['away']}",
+                "fixture_date": f"eq.{row['fixture_date']}",
+            },
+            json=body,
+            timeout=30,
+        )
+        if patch.ok:
+            settled += 1
+            print(f"Settled {label}: {body['home_goals']}-{body['away_goals']} {body['result']}")
+        else:
+            print(f"Could not settle {label}: {patch.status_code} {patch.text}")
+    print(f"Settled {settled} of {len(waiting)} rows waiting for a result.")
 
 
 def back_before_kickoff(news, fixture_date):
@@ -86,6 +151,8 @@ def main():
     if not api_key:
         sys.exit("TYPESAFE_API_KEY not found in epl-predictor/.env or the environment")
 
+    settle_results(db, dry_run)
+
     now = datetime.now(timezone.utc)
     today = today_override or now.date()
     lock_today = today_override is None and now.hour >= KICKOFF_LOCK_HOUR_UTC
@@ -103,7 +170,7 @@ def main():
         candidates.append((row, fixture_date))
 
     print(
-        f"Today (UTC): {today}. Fixtures in window: {len(candidates)}"
+        f"\nToday (UTC): {today}. Fixtures in window: {len(candidates)}"
         + (" (today's fixtures locked)" if lock_today else "")
     )
     if not candidates:
