@@ -9,6 +9,7 @@ import pandas as pd
 
 import download_data
 import download_xg
+from explain import write_explain
 from features import ELO_NEW_TEAM, add_elo, add_rolling, team_rows
 from train_final import LIVE_SEASON, stack_inputs
 
@@ -142,6 +143,11 @@ def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     predictions.to_csv(OUT_DIR / "predictions.csv", index=False)
     team_stats.to_csv(OUT_DIR / "team_stats.csv", index=False)
+    try:
+        count = write_explain(bundle, pairs, now, OUT_DIR / "explain.json")
+        print(f"Wrote explain.json ({count} pairings)")
+    except Exception as error:
+        print(f"WARNING: explain step failed, predictions are unaffected: {error}")
     played = current.loc[current["played"], ["home", "away", "date", "home_goals", "away_goals", "result"]].copy()
     played = played.rename(columns={"date": "fixture_date"})
     played["fixture_date"] = played["fixture_date"].dt.strftime("%Y-%m-%d")

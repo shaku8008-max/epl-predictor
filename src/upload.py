@@ -1,5 +1,6 @@
 """Upload the files predict.py wrote to Supabase."""
 import csv
+import json
 import os
 from datetime import date, timedelta
 from pathlib import Path
@@ -75,6 +76,21 @@ def next_round(predictions: list[dict]) -> list[dict]:
     return [row for row in upcoming if date.fromisoformat(row["fixture_date"]) <= cutoff]
 
 
+def upload_explain(db: Database, stamp: str) -> int:
+    """Upload explain.json if it belongs to this run, then drop older rows."""
+    path = OUT_DIR / "explain.json"
+    if not path.exists():
+        print("No explain.json, skipping explain upload")
+        return 0
+    rows = json.loads(path.read_text())
+    if not rows or rows[0]["updated_at"] != stamp:
+        print("explain.json is not from this run, skipping explain upload")
+        return 0
+    db.upsert("prediction_explain", rows, "home,away")
+    db.delete_older("prediction_explain", "updated_at", stamp)
+    return len(rows)
+
+
 def main() -> None:
     db = Database(*load_settings())
 
@@ -106,8 +122,15 @@ def main() -> None:
         "status": "ok",
     })
 
+    try:
+        explained = upload_explain(db, stamp)
+    except SystemExit as error:
+        print(f"WARNING: explain upload failed: {error}")
+        explained = 0
+
     print(f"Uploaded {len(predictions)} predictions, {len(team_stats)} teams, "
-          f"{len(fixtures)} next-round fixtures, {len(results)} results (run stamped {stamp})")
+          f"{len(fixtures)} next-round fixtures, {len(results)} results, "
+          f"{explained} explain rows (run stamped {stamp})")
 
 
 if __name__ == "__main__":
