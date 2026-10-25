@@ -27,6 +27,15 @@ def read_rows(name: str) -> list[dict]:
         return [{k: (v if v != "" else None) for k, v in row.items()} for row in csv.DictReader(f)]
 
 
+def clean_results(rows: list[dict]) -> list[dict]:
+    """Goals are written as 2.0 in the CSV, but the database column is a whole number."""
+    for row in rows:
+        for column in ("home_goals", "away_goals"):
+            if row.get(column) is not None:
+                row[column] = int(float(row[column]))
+    return rows
+
+
 class Database:
     def __init__(self, url: str, key: str) -> None:
         self.base = f"{url}/rest/v1"
@@ -74,7 +83,7 @@ def main() -> None:
         if row["fixture_date"]:
             row["fixture_date"] = row["fixture_date"][:10]
     team_stats = read_rows("team_stats.csv")
-    results = read_rows("results.csv")
+    results = clean_results(read_rows("results.csv"))
     stamp = predictions[0]["predicted_at"]
 
     db.upsert("predictions", predictions, "home,away")
