@@ -1,5 +1,6 @@
 import contextlib
 import io
+import nn_explain
 from datetime import datetime, timezone
 from itertools import permutations
 from pathlib import Path
@@ -111,7 +112,11 @@ def main() -> None:
     today = pd.Timestamp.now(tz="UTC").tz_localize(None).normalize()
     stats = team_stat_table(matches, teams, today)
     stats["updated_at"] = now
-    stats.round(3).to_csv(OUT_DIR / "nn_team_stats.csv", index=False)
+    stats.round(3).to_csv(OUT_DIR / "nn_team_stats.csv", index=False)     
+    explained = nn_explain.write_explain(
+        model, inputs.assign(fixture_date=pairs["fixture_date"]), now,
+        MODEL_NAME, MODEL_VERSION, OUT_DIR / "nn_explain.json",
+    )
     top = stats.sort_values("elo", ascending=False).head(5)[["team", "elo"]].round(0)
     print(f"Saved nn_team_stats.csv ({len(stats)} teams). Top Elo: "
           + ", ".join(f"{r.team} {int(r.elo)}" for r in top.itertuples()))
@@ -124,10 +129,12 @@ def main() -> None:
     if len(upcoming):
         first = pd.Timestamp(upcoming["fixture_date"].min())
         cutoff = (first + pd.Timedelta(days=ROUND_DAYS)).strftime("%Y-%m-%d")
-        print("\nNext round:")
+        print("\nNext round:")         
         print(upcoming[upcoming["fixture_date"] <= cutoff][
             ["fixture_date", "home", "away", "p_home", "p_draw", "p_away", "xg_home", "xg_away"]
         ].to_string(index=False))
+        first_game = upcoming.iloc[0]
+        nn_explain.describe(explained, first_game["home"], first_game["away"])
 
 
 if __name__ == "__main__":
