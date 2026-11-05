@@ -1,0 +1,34 @@
+name: Predict NN
+
+on:
+  schedule:
+    - cron: "47 5 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: predict-nn
+  cancel-in-progress: false
+
+jobs:
+  predict-nn:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install packages
+        run: pip install -r requirements.txt
+
+      - name: Predict with the neural network
+        run: python src/predict_nn.py
+
+      - name: Upload to Supabase
+        run: python src/upload_nn.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
