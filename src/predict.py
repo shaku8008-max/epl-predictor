@@ -129,7 +129,10 @@ def main() -> None:
 
     predictions = pairs[["home", "away"]].copy()
     predictions[["p_home", "p_draw", "p_away"]] = probs.round(4)
-    upcoming = current.loc[~current["played"], ["home", "away", "date"]].rename(columns={"date": "fixture_date"})
+    season_rows = matches[matches["season"] == LIVE_SEASON]
+    done = set(zip(season_rows["home"], season_rows["away"]))
+    is_upcoming = [(h, a) not in done for h, a in zip(current["home"], current["away"])]
+    upcoming = current.loc[is_upcoming, ["home", "away", "date"]].rename(columns={"date": "fixture_date"})
     predictions = predictions.merge(upcoming, on=["home", "away"], how="left")
     predictions["model"] = bundle["name"]
     predictions["model_version"] = bundle["version"]
@@ -148,7 +151,7 @@ def main() -> None:
         print(f"Wrote explain.json ({count} pairings)")
     except Exception as error:
         print(f"WARNING: explain step failed, predictions are unaffected: {error}")
-    played = current.loc[current["played"], ["home", "away", "date", "home_goals", "away_goals", "result"]].copy()
+    played = season_rows[["home", "away", "date", "home_goals", "away_goals", "result"]].copy()
     played = played.rename(columns={"date": "fixture_date"})
     played["fixture_date"] = played["fixture_date"].dt.strftime("%Y-%m-%d")
     # Goals are ints, but the column is float64 (unplayed rows are NaN), so cast
