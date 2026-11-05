@@ -13,6 +13,10 @@ def main() -> None:
     db.upsert("nn_predictions", predictions, "home,away")
     db.delete_older("nn_predictions", "predicted_at", stamp)
 
+    team_stats = read_rows("nn_team_stats.csv")
+    db.upsert("nn_team_stats", team_stats, "team")
+    db.delete_older("nn_team_stats", "updated_at", stamp)
+
     fixtures = next_round(predictions)
     if fixtures:
         db.upsert("nn_prediction_history", fixtures, "home,away,fixture_date")

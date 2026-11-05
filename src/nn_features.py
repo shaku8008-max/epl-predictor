@@ -77,6 +77,31 @@ def build_pairs(matches: pd.DataFrame, fixtures: pd.DataFrame, columns: list[str
 
     return out[["home", "away"] + columns]
 
+TEAM_STAT_COLUMNS = [
+    "points_last5", "goals_for_last5", "goals_against_last5",
+    "shots_for_last5", "shots_against_last5", "sot_for_last5", "sot_against_last5",
+    "goal_diff_ewm20", "goal_diff_ewm40",
+]
+VENUE_COLUMNS = ["points_venue5", "goals_for_venue5", "goals_against_venue5"]
+
+
+def team_stat_table(matches: pd.DataFrame, teams: list[str], as_of: pd.Timestamp) -> pd.DataFrame:
+    """One row per team: its Elo and the form numbers the network sees, for the website's stats card.
+
+    Home-venue and away-venue form come from the two placeholder runs in team_states, so
+    "home_..." is the team's last 5 home matches and "away_..." its last 5 away matches.
+    """
+    home_state, away_state = team_states(matches, teams)
+    _, ratings = add_elo(matches.copy())
+    last = last_match_dates(matches)
+
+    table = home_state.loc[teams, TEAM_STAT_COLUMNS].copy()
+    table.insert(0, "elo", [ratings.get(t, ELO_NEW_TEAM) for t in teams])
+    for col in VENUE_COLUMNS:
+        table[f"home_{col}"] = home_state.loc[teams, col]
+        table[f"away_{col}"] = away_state.loc[teams, col]
+    table["rest_days"] = (as_of - last.reindex(teams)).dt.days.to_numpy()
+    return table.rename_axis("team").reset_index()
 
 def parity_test(n_days: int = 6) -> None:
     """Rebuild past matches' features the webapp way and compare with the training rows."""

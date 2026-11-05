@@ -8,7 +8,7 @@ import pandas as pd
 import requests
 
 import download_data
-from nn_features import MATCHES_FILE, build_pairs
+from nn_features import MATCHES_FILE, build_pairs, team_stat_table
 from nn_infer import GoalsPredictor
 from train_final import LIVE_SEASON
 
@@ -107,7 +107,14 @@ def main() -> None:
     out["predicted_at"] = now
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    out.to_csv(OUT_FILE, index=False)
+    out.to_csv(OUT_FILE, index=False) 
+    today = pd.Timestamp.now(tz="UTC").tz_localize(None).normalize()
+    stats = team_stat_table(matches, teams, today)
+    stats["updated_at"] = now
+    stats.round(3).to_csv(OUT_DIR / "nn_team_stats.csv", index=False)
+    top = stats.sort_values("elo", ascending=False).head(5)[["team", "elo"]].round(0)
+    print(f"Saved nn_team_stats.csv ({len(stats)} teams). Top Elo: "
+          + ", ".join(f"{r.team} {int(r.elo)}" for r in top.itertuples()))
 
     upcoming = out.dropna(subset=["fixture_date"]).sort_values("fixture_date")
     print(f"Results through {last_result.date()} | {len(teams)} teams, {len(out)} pairings, "
