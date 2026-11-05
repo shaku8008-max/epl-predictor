@@ -34,10 +34,18 @@ def download_season(year: int, refresh: bool = False) -> list[dict]:
             "X-Requested-With": "XMLHttpRequest",
             "Referer": f"https://understat.com/league/EPL/{year}",
         }
-        response = requests.get(URL.format(year=year), headers=headers, timeout=30)
-        response.raise_for_status()
-        path.write_bytes(response.content)
-        print(f"downloaded {year}")
+        try:
+            response = requests.get(URL.format(year=year), headers=headers, timeout=30)
+            response.raise_for_status()
+            json.loads(response.text)["dates"]     # make sure it is real data before saving it
+        except (requests.RequestException, ValueError, KeyError, TypeError) as error:
+            if not path.exists():
+                raise                              # nothing saved to fall back on
+            print(f"WARNING: could not refresh Understat {year} ({type(error).__name__}); "
+                  f"keeping the saved copy.")
+        else:
+            path.write_bytes(response.content)
+            print(f"downloaded {year}")
         time.sleep(2)
     return json.loads(path.read_text(encoding="utf-8"))["dates"]
 
