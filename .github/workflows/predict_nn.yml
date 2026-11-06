@@ -27,6 +27,10 @@ jobs:
       - name: Predict with the neural network
         run: python src/predict_nn.py
 
+      - name: Simulate the rest of the season
+        continue-on-error: true
+        run: python src/season_sim.py
+
       - name: Upload to Supabase
         run: python src/upload_nn.py
         env:
