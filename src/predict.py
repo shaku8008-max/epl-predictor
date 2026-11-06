@@ -1,5 +1,6 @@
 import contextlib
 import io
+import json
 from datetime import datetime, timezone
 from itertools import permutations
 from pathlib import Path
@@ -18,6 +19,7 @@ MATCHES_FILE = Path("data/processed/matches_2005.csv")
 XG_FILE = Path("data/processed/xg.csv")
 MODEL_FILE = Path("models/lean_v1.joblib")
 OUT_DIR = Path("data/predictions")
+XG_MAX_LAG_DAYS = 3     # xG this many days behind the latest results (or more) counts as stale
 
 # Shown under the prediction on the website.
 DISPLAY_STATS = [
@@ -131,7 +133,17 @@ def main() -> None:
     played.to_csv(OUT_DIR / "results.csv", index=False)
     fixtures = predictions.dropna(subset=["fixture_date"]).sort_values("fixture_date")
     history_file = OUT_DIR / "history.csv"
-    fixtures.to_csv(history_file, mode="a", header=not history_file.exists(), index=False)
+    fixtures.to_csv(history_file, mode="a", header=not history_file.exists(), index=False)     
+    # How fresh is the xG? Understat's feed has been unreliable, so record it for the site.
+    xg_through = matches.loc[matches["home_xg"].notna(), "date"].max()
+    lag_days = (matches["date"].max() - xg_through).days
+    xg_ok = lag_days <= XG_MAX_LAG_DAYS
+    (OUT_DIR / "run_info.json").write_text(json.dumps({
+        "xg_through": xg_through.strftime("%Y-%m-%d"),
+        "xg_ok": xg_ok,
+    }))
+    if not xg_ok:
+        print(f"WARNING: xG data stops at {xg_through.date()}, {lag_days} days behind the latest results.")
 
     print(f"Results through {matches['date'].max().date()}")
     print(f"{len(teams)} teams, {len(predictions)} pairings, {len(fixtures)} upcoming fixtures")

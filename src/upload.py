@@ -90,6 +90,12 @@ def upload_explain(db: Database, stamp: str) -> int:
     db.delete_older("prediction_explain", "updated_at", stamp)
     return len(rows)
 
+def read_run_info() -> dict:
+    """xG freshness written by predict.py. If the file is missing, say 'not ok' rather than 'ok'."""
+    path = OUT_DIR / "run_info.json"
+    if not path.exists():
+        return {"xg_ok": False, "xg_through": None}
+    return json.loads(path.read_text())
 
 def main() -> None:
     db = Database(*load_settings())
@@ -101,6 +107,7 @@ def main() -> None:
     team_stats = read_rows("team_stats.csv")
     results = clean_results(read_rows("results.csv"))
     stamp = predictions[0]["predicted_at"]
+    info = read_run_info()
 
     db.upsert("predictions", predictions, "home,away")
     db.delete_older("predictions", "predicted_at", stamp)
@@ -118,7 +125,8 @@ def main() -> None:
         "data_as_of": stamp,
         "model": predictions[0]["model"],
         "model_version": predictions[0]["model_version"],
-        "xg_ok": True,
+        "xg_ok": info["xg_ok"],
+        "xg_through": info["xg_through"],
         "status": "ok",
     })
 
