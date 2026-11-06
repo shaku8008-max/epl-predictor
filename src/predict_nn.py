@@ -4,6 +4,7 @@ import nn_explain
 from datetime import datetime, timezone
 from itertools import permutations
 from pathlib import Path
+from fpl_fixtures import load_fixtures
 
 import pandas as pd
 import requests

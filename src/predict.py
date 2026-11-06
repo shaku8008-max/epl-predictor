@@ -9,6 +9,7 @@ import pandas as pd
 
 import download_data
 import download_xg
+from fpl_fixtures import load_fixtures
 from explain import write_explain
 from features import ELO_NEW_TEAM, add_elo, add_rolling, team_rows
 from train_final import LIVE_SEASON, stack_inputs
@@ -26,53 +27,18 @@ DISPLAY_STATS = [
 ]
 
 
-def refresh_data() -> list[dict]:
-    """Re-download the season in progress from both sources, quietly."""
+def refresh_data() -> None:
+    """Re-download football-data results and Understat's xG copy, quietly."""
     with contextlib.redirect_stdout(io.StringIO()):
         download_data.main(2005, MATCHES_FILE)
         download_xg.main()
-    return download_xg.download_season(LIVE_SEASON)
 
 
-def understat_table(dates: list[dict]) -> pd.DataFrame:
-    """Every match of the current season, played or not, with our team names."""
-    rename = download_xg.TEAM_NAMES
-    rows = []
-    for m in dates:
-        played = m["xG"]["h"] is not None and m["goals"]["h"] is not None
-        row = {
-            "season": LIVE_SEASON,
-            "date": pd.Timestamp(m["datetime"][:10]),
-            "home": rename.get(m["h"]["title"], m["h"]["title"]),
-            "away": rename.get(m["a"]["title"], m["a"]["title"]),
-            "played": played,
-        }
-        if played:
-            home_goals, away_goals = int(m["goals"]["h"]), int(m["goals"]["a"])
-            row.update(
-                home_goals=home_goals,
-                away_goals=away_goals,
-                result="H" if home_goals > away_goals else "A" if away_goals > home_goals else "D",
-                home_xg=float(m["xG"]["h"]),
-                away_xg=float(m["xG"]["a"]),
-            )
-        rows.append(row)
-    return pd.DataFrame(rows)
-
-
-def load_history(current: pd.DataFrame) -> tuple[pd.DataFrame, int]:
-    """All played matches with xG, topped up with any Understat has and football-data lacks."""
+def load_history() -> pd.DataFrame:
+    """All played matches from football-data, with xG where Understat's copy has it."""
     matches = pd.read_csv(MATCHES_FILE, parse_dates=["date"])
     matches = matches.merge(pd.read_csv(XG_FILE), on=["season", "home", "away"], how="left")
-
-    this_season = matches[matches["season"] == LIVE_SEASON]
-    have = set(zip(this_season["home"], this_season["away"]))
-    played = current[current["played"]]
-    is_new = [(h, a) not in have for h, a in zip(played["home"], played["away"])]
-    extra = played[is_new].drop(columns="played")
-    if len(extra):
-        matches = pd.concat([matches, extra], ignore_index=True)
-    return matches.sort_values("date", kind="stable").reset_index(drop=True), len(extra)
+    return matches.sort_values("date", kind="stable").reset_index(drop=True)
 
 
 def team_state(matches: pd.DataFrame, teams: list[str]) -> pd.DataFrame:
@@ -115,9 +81,12 @@ def main() -> None:
     models = bundle["base_models"]
     cols = next(iter(models.values())).cols
 
-    current = understat_table(refresh_data())
-    matches, added = load_history(current)
-    teams = sorted(set(current["home"]) | set(current["away"]))
+    refresh_data()
+    matches = load_history()
+    season_rows = matches[matches["season"] == LIVE_SEASON]
+    teams = sorted(set(season_rows["home"]) | set(season_rows["away"]))
+    if len(teams) != 20:
+        raise SystemExit(f"expected 20 teams this season, found {len(teams)}: {teams}")
 
     _, elo = add_elo(matches.copy())
     ratings = {team: elo.get(team, ELO_NEW_TEAM) for team in teams}
@@ -129,10 +98,11 @@ def main() -> None:
 
     predictions = pairs[["home", "away"]].copy()
     predictions[["p_home", "p_draw", "p_away"]] = probs.round(4)
-    season_rows = matches[matches["season"] == LIVE_SEASON]
+    # Fixtures come from the FPL API; anything football-data already shows as played is dropped.
+    scheduled = load_fixtures(teams)
     done = set(zip(season_rows["home"], season_rows["away"]))
-    is_upcoming = [(h, a) not in done for h, a in zip(current["home"], current["away"])]
-    upcoming = current.loc[is_upcoming, ["home", "away", "date"]].rename(columns={"date": "fixture_date"})
+    is_upcoming = [(h, a) not in done for h, a in zip(scheduled["home"], scheduled["away"])]
+    upcoming = scheduled.loc[is_upcoming, ["home", "away", "fixture_date"]]
     predictions = predictions.merge(upcoming, on=["home", "away"], how="left")
     predictions["model"] = bundle["name"]
     predictions["model_version"] = bundle["version"]
@@ -163,7 +133,7 @@ def main() -> None:
     history_file = OUT_DIR / "history.csv"
     fixtures.to_csv(history_file, mode="a", header=not history_file.exists(), index=False)
 
-    print(f"Results through {matches['date'].max().date()} ({added} matches added from Understat)")
+    print(f"Results through {matches['date'].max().date()}")
     print(f"{len(teams)} teams, {len(predictions)} pairings, {len(fixtures)} upcoming fixtures")
 
     if len(fixtures):
