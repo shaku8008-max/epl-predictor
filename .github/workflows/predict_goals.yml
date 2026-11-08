@@ -1,0 +1,34 @@
+name: Predict Goals
+
+on:
+  schedule:
+    - cron: "57 5 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: predict-goals
+  cancel-in-progress: false
+
+jobs:
+  predict-goals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install packages
+        run: pip install -r requirements.txt
+
+      - name: Predict with the linear goals model
+        run: python src/predict_goals.py
+
+      - name: Upload to Supabase
+        run: python src/upload_goals.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
