@@ -27,7 +27,10 @@ def load_fixtures(teams: list[str]) -> pd.DataFrame:
     try:
         names = {t["id"]: FPL_TO_OURS.get(t["name"], t["name"]) for t in get_json(FPL_TEAMS_URL)["teams"]}
         raw = pd.DataFrame(get_json(FPL_FIXTURES_URL))
-        raw = raw[~raw["finished"] & raw["kickoff_time"].notna()]      # skip finished and unscheduled
+        # FPL sets finished_provisional at full time, but finished only once the whole
+        # gameweek is confirmed (often a day later), so treat either one as done.
+        done = raw["finished"] | raw.get("finished_provisional", False)
+        raw = raw[~done & raw["kickoff_time"].notna()]      # skip finished and unscheduled
         kickoff = pd.to_datetime(raw["kickoff_time"], utc=True).dt.tz_convert("Europe/London")
         fixtures = pd.DataFrame({
             "home": raw["team_h"].map(names),
