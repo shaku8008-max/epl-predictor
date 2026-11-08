@@ -1,4 +1,4 @@
-"""Fit the linear goal-difference model on every completed season and export it as JSON.
+"""Fit the linear goal-difference model (plus home/away goal heads) and export it as JSON.
 
 Same 29 inputs as the neural network, so the shared feature builder (nn_features.build_pairs)
 feeds both. The JSON is committed, like models/goals_nn_v1.npz.
@@ -37,21 +37,37 @@ def main() -> None:
     assert not missing, f"{FEATURES_FILE} is missing columns: {missing}"
 
     train = df[df["season"] < LIVE_SEASON]          # the live season is never used for fitting
-    goal_diff = (train["home_goals"] - train["away_goals"]).to_numpy()
     X = train[FEATURE_COLUMNS].to_numpy()
-    model = LinearGoalsModel(FEATURE_COLUMNS).fit(X, goal_diff)
+    home_goals = train["home_goals"].to_numpy()
+    away_goals = train["away_goals"].to_numpy()
+
+    old = LinearGoalsModel.load(MODEL_FILE) if MODEL_FILE.exists() else None
+    model = LinearGoalsModel(FEATURE_COLUMNS).fit(X, home_goals - away_goals, home_goals, away_goals)
+
+    probs = model.predict_probs(X)
+    if old is not None:
+        gap = np.abs(old.predict_probs(X) - probs).max()
+        print(f"Probabilities vs the currently saved model: largest difference {gap:.2e}")
+        assert gap < 1e-9, "the probabilities changed; the tested model must not change. Stop and check."
+
+    goals = model.predict_goals(X)
+    link = np.abs((goals[:, 0] - goals[:, 1]) - model.predict_mu(X)).max()
+    print(f"Expected home goals minus away goals vs the expected margin: largest difference {link:.2e}")
+    assert link < 1e-9, "home minus away does not equal the margin"
 
     model.save(MODEL_FILE)
     again = LinearGoalsModel.load(MODEL_FILE)
-    probs = model.predict_probs(X)
-    assert np.array_equal(again.predict_probs(X), probs), "save and load changed the predictions"
+    assert np.array_equal(again.predict_probs(X), probs), "save and load changed the probabilities"
+    assert np.array_equal(again.predict_goals(X), goals), "save and load changed the goals"
 
-    print(f"Trained on {len(train)} matches, seasons {int(train['season'].min())}..{int(train['season'].max())}")
-    print(f"Saved {MODEL_FILE} ({MODEL_FILE.stat().st_size} bytes). sigma {model.sigma:.4f}, intercept {model.intercept:+.4f}")
-    print("\nSanity check, in-sample so only a rough guide (average predicted vs actual):")
-    actual = train["result"].map({"H": 0, "D": 1, "A": 2}).value_counts(normalize=True).sort_index().to_numpy()
-    print(f"  predicted H/D/A {probs.mean(axis=0).round(3)}")
-    print(f"  actual    H/D/A {actual.round(3)}")
+    print(f"\nTrained on {len(train)} matches, seasons {int(train['season'].min())}..{int(train['season'].max())}")
+    print(f"Saved {MODEL_FILE} ({MODEL_FILE.stat().st_size} bytes). sigma {model.sigma:.4f}")
+    print("\nExpected goals on the training rows (in-sample, so only a rough guide):")
+    print(f"  home: predicted mean {goals[:, 0].mean():.3f} vs actual {home_goals.mean():.3f} | "
+          f"range {goals[:, 0].min():.2f} to {goals[:, 0].max():.2f}")
+    print(f"  away: predicted mean {goals[:, 1].mean():.3f} vs actual {away_goals.mean():.3f} | "
+          f"range {goals[:, 1].min():.2f} to {goals[:, 1].max():.2f}")
+    print(f"  rows with a predicted side below 0.1 goals: {int((goals < 0.1).any(axis=1).sum())} of {len(goals)}")
 
 
 if __name__ == "__main__":
